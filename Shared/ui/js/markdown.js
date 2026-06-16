@@ -1,6 +1,29 @@
+// ─── Lazy vendor script loader ────────────────────────────────
+const _vendorPromises = {};
+function _loadVendor(src) {
+  if (!_vendorPromises[src]) {
+    _vendorPromises[src] = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = resolve;
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+  return _vendorPromises[src];
+}
+
 // ─── Markdown rendering with DOMPurify ─────────────────────────
+let _mdReady = null;
 function renderMd(text) {
   if (!text) return '';
+  if (!_mdReady) {
+    _mdReady = Promise.all([
+      _loadVendor('../vendor/marked.min.js'),
+      _loadVendor('../vendor/dompurify.min.js'),
+    ]);
+  }
+  // Synchronous after loaded (marked and DOMPurify attach to window)
   const allowedTags = [
     'h1','h2','h3','h4','h5','h6','p','br','hr',
     'ul','ol','li','blockquote','pre','code','strong','em','a','img',
@@ -19,7 +42,7 @@ function renderMd(text) {
     th: ['align'],
     td: ['align'],
   };
-  const html = marked.parse(text, { breaks: true, gfm: true });
+  const html = marked.parse(text, { breaks: true, gfm: true, headerIds: false, mangle: false });
   return DOMPurify.sanitize(html, {
     ALLOWED_TAGS: allowedTags,
     ALLOWED_ATTR: allowedAttrs,
@@ -28,7 +51,11 @@ function renderMd(text) {
 }
 
 // ─── Code block formatting ─────────────────────────────────────
+let _hlReady = null;
 function formatCodeBlocks(html) {
+  if (!_hlReady) {
+    _hlReady = _loadVendor('../vendor/highlight.min.js');
+  }
   const div = document.createElement('div');
   div.innerHTML = html;
   div.querySelectorAll('pre code').forEach(el => {

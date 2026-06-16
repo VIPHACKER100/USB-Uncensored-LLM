@@ -29,13 +29,31 @@ USB-Uncensored-LLM now ships with significant performance improvements for low-r
 - **Deferred markdown** — `marked.parse()` + `DOMPurify.sanitize()` + `hljs.highlight()` run only once when generation finishes, not on every character
 - **rAF-batched token processing** — DOM updates are throttled via `requestAnimationFrame`, capped at 60 updates/sec
 - **Scroll throttle** — Scroll operations are queued with an rAF guard (max 1 scroll per frame)
+- **Incremental appendMsg/finishStream** — New messages append a single DOM element instead of rebuilding all messages
+- **Lazy vendor scripts** — `marked`, `DOMPurify`, `highlight.js` are loaded dynamically on first use, not at page load
+- **`will-change: contents` on streaming message** — Optimizes paint during content changes; cleared on finish
 
 ### Server-Side
-- **Static file caching** — CSS/JS/fonts cached in memory via `lru_cache` (~10x faster from USB)
+- **Service Worker cache** — Vendor assets cached in browser Cache API; instant load on repeat visits
+- **Static file caching** — CSS/JS/fonts cached in memory via LRU cache (~10x faster from USB)
+- **Unified file cache** — Content + ETag + Last-Modified stored together; no redundant `os.stat()` calls
+- **Gzip compression** — Text assets (HTML/CSS/JS/JSON) served gzipped when client supports it
+- **ThreadPoolExecutor** — 8-worker thread pool replaces per-request thread spawn; reduces overhead
 - **16KB Ollama proxy buffer** — Fewer syscalls during streaming (was 4KB)
 - **Content-Length + ETag headers** — Browser caching enabled for vendor assets; 304 responses for unchanged files
 - **Hardware stats pre-warm** — CPU baseline sampled at server start (no blocking `time.sleep(0.25)` on first poll)
-- **Polling reduced** — HW stats polled every 10s instead of 5s, with client-side debounce
+- **Polling reduced** — HW stats polled via rAF, max every 25s, pauses when tab is hidden
+- **`_MEMORYSTATUSEX` defined once** — Ctypes struct at module level, reused across all HW stats calls
+- **Preconnect to Ollama** — `<link rel="preconnect">` in HTML head for early TCP connection
+
+### Client-Side
+- **Image resize before upload** — Pasted/dropped images downscaled to 800px max via canvas (5-10x smaller payload)
+- **Low-RAM mode** — `<4 GB` RAM detected via `navigator.deviceMemory`; disables all CSS animations
+- **DocumentFragment rendering** — `renderMsgs()` batches all DOM inserts into a single reflow
+- **`content-visibility: auto`** — Native browser lazy rendering; off-screen messages skip layout/paint
+- **`contain-intrinsic-size`** — Placeholder height for off-screen elements prevents scroll jank
+- **Message cap at 100** — `STATE.msgs` trimmed to 100 to cap memory growth in long sessions
+- **requestIdleCallback saves** — Chat persistence deferred to idle moments, not blocking main thread
 
 ### Memory Tuning
 - `num_ctx: 2048` default — Reduces VRAM usage ~50% vs Ollama's default 4096–8192

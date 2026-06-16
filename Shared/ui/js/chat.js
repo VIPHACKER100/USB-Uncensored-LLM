@@ -2,13 +2,15 @@
 function renderMsgs() {
   const el = document.getElementById('msgs');
   el.innerHTML = '';
+  const frag = document.createDocumentFragment();
   STATE.msgs.forEach((m, i) => {
     const mr = document.createElement('div');
     mr.className = `mr ${m.role}`;
     mr.id = `msg-${i}`;
     mr.innerHTML = msgHTML(m, i);
-    el.appendChild(mr);
+    frag.appendChild(mr);
   });
+  el.appendChild(frag);
   scrollChat();
 }
 
@@ -54,7 +56,16 @@ function fileAttachHTML(file) {
 function appendMsg(role, content, opts = {}) {
   const msg = { role, content, time: Date.now(), done: true, model: opts.model || null, file: opts.file || null };
   STATE.msgs.push(msg);
-  renderMsgs();
+  // Cap message history at 100 to prevent memory growth
+  if (STATE.msgs.length > 100) STATE.msgs.splice(0, STATE.msgs.length - 100);
+  const el = document.getElementById('msgs');
+  const idx = STATE.msgs.length - 1;
+  const mr = document.createElement('div');
+  mr.className = `mr ${role}`;
+  mr.id = `msg-${idx}`;
+  mr.innerHTML = msgHTML(msg, idx);
+  el.appendChild(mr);
+  scrollChat();
 }
 
 function streamMsg(content, opts = {}) {
@@ -64,17 +75,19 @@ function streamMsg(content, opts = {}) {
   } else {
     STATE.msgs.push({ role: 'assistant', content, time: Date.now(), done: false, model: opts.model || null });
   }
-  // re-render last message
-  const el = document.getElementById('msgs');
   const idx = STATE.msgs.length - 1;
   let mr = document.getElementById(`msg-${idx}`);
   if (!mr) {
     mr = document.createElement('div');
     mr.className = 'mr assistant';
     mr.id = `msg-${idx}`;
-    el.appendChild(mr);
+    mr.style.willChange = 'contents';
+    document.getElementById('msgs').appendChild(mr);
+    mr.innerHTML = msgHTML(STATE.msgs[idx], idx);
+  } else {
+    const mt = mr.querySelector('.mt');
+    if (mt) mt.textContent = content;
   }
-  mr.innerHTML = msgHTML(STATE.msgs[idx], idx);
   scrollChat();
 }
 
@@ -86,12 +99,22 @@ function finishStream(content, opts = {}) {
     last.time = Date.now();
     last.model = opts.model || last.model;
   }
-  renderMsgs();
+  const idx = STATE.msgs.length - 1;
+  let mr = document.getElementById(`msg-${idx}`);
+  if (mr) {
+    mr.style.willChange = '';
+    mr.innerHTML = msgHTML(STATE.msgs[idx], idx);
+  }
+  scrollChat();
 }
 
 function scrollChat() {
-  const chat = document.getElementById('chat');
-  requestAnimationFrame(() => { chat.scrollTop = chat.scrollHeight; });
+  if (scrollChat._queued) return;
+  scrollChat._queued = true;
+  requestAnimationFrame(() => {
+    document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight;
+    scrollChat._queued = false;
+  });
 }
 
 function copyMsg(idx) {

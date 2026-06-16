@@ -26,6 +26,8 @@ import logging
 import logging.handlers
 import queue
 import uuid
+import gzip
+import concurrent.futures
 from datetime import datetime
 from urllib.parse import urlparse
 
@@ -36,8 +38,6 @@ try:
 except ImportError:
     HAS_PSUTIL = False
 
-from functools import lru_cache
-
 # ── Configuration ──────────────────────────────────────────────
 CHAT_SERVER_PORT = 3333
 OLLAMA_HOST = "http://127.0.0.1:11434"
@@ -45,11 +45,31 @@ OLLAMA_HOST = "http://127.0.0.1:11434"
 # Static file cache configuration
 STATIC_CACHE_MAX_MB = 32
 
-# Static file cache with LRU
-@lru_cache(maxsize=64)
-def _read_static_file(path):
+# Static file cache with LRU — stores (content, etag, last_modified, mtime_ns)
+_static_file_cache = {}
+
+def _get_static_file(path):
+    """Read a static file with caching. Returns (content, etag, last_modified)."""
+    # Fast path: check cache with mtime validation
+    cached = _static_file_cache.get(path)
+    if cached:
+        content, etag, last_modified, mtime_ns = cached
+        try:
+            if os.stat(path).st_mtime_ns == mtime_ns:
+                return content, etag, last_modified
+        except OSError:
+            pass
+    # Cache miss or modified — load fresh
     with open(path, "rb") as f:
-        return f.read()
+        content = f.read()
+    stat = os.stat(path)
+    etag = f'"{stat.st_mtime_ns}-{stat.st_size}"'
+    last_modified = time.strftime("%a, %d %b %Y %H:%M:%S GMT", time.gmtime(stat.st_mtime))
+    # Keep cache bounded
+    if len(_static_file_cache) >= 128:
+        _static_file_cache.clear()
+    _static_file_cache[path] = (content, etag, last_modified, stat.st_mtime_ns)
+    return content, etag, last_modified
 LLAMA_CPP_MODE = "--llama-cpp" in sys.argv
 if LLAMA_CPP_MODE:
     OLLAMA_HOST = "http://127.0.0.1:8080"
@@ -370,19 +390,7 @@ def _get_hardware_specs():
             pass
     elif plat == "Windows":
         try:
-            class MEMORYSTATUSEX(ctypes.Structure):
-                _fields_ = [
-                    ("dwLength", ctypes.c_ulong),
-                    ("dwMemoryLoad", ctypes.c_ulong),
-                    ("ullTotalPhys", ctypes.c_ulonglong),
-                    ("ullAvailPhys", ctypes.c_ulonglong),
-                    ("ullTotalPageFile", ctypes.c_ulonglong),
-                    ("ullAvailPageFile", ctypes.c_ulonglong),
-                    ("ullTotalVirtual", ctypes.c_ulonglong),
-                    ("ullAvailVirtual", ctypes.c_ulonglong),
-                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
-                ]
-            msx = MEMORYSTATUSEX()
+            msx = _MEMORYSTATUSEX()
             msx.dwLength = ctypes.sizeof(msx)
             ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(msx))
             specs["ram_total_gb"] = round(msx.ullTotalPhys / (1024 ** 3), 2)
@@ -613,7 +621,8 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
 
         path = urlparse(self.path).path
         # Auth only enforced for /api/* routes; static assets open
-        if path.startswith("/api/"):
+        # Exempt /api/token and /api/stats (no chicken-and-egg problem; HW stats not sensitive)
+        if path.startswith("/api/") and path not in ("/api/token", "/api/stats"):
             if not _check_auth(self.headers):
                 self.send_response(401)
                 self.send_header("Content-Type", "application/json")
@@ -695,12 +704,16 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
 
     # ── Serve HTML ─────────────────────────────────────────────
+    def _compress_if_accepted(self, content, content_type):
+        """Gzip compress text content if client accepts it."""
+        encoding = self.headers.get("Accept-Encoding", "")
+        if "gzip" not in encoding or not content_type.startswith(("text/", "application/javascript", "application/json")):
+            return content, False
+        return gzip.compress(content), True
+
     def _serve_html(self):
         try:
-            content = _read_static_file(HTML_FILE)
-            stat = os.stat(HTML_FILE)
-            etag = f'"{stat.st_mtime_ns}-{stat.st_size}"'
-            last_modified = time.strftime("%a, %d %b %Y %H:%M:%S GMT", time.gmtime(stat.st_mtime))
+            content, etag, last_modified = _get_static_file(HTML_FILE)
             
             if_none_match = self.headers.get("If-None-Match")
             if_modified_since = self.headers.get("If-Modified-Since")
@@ -714,22 +727,25 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
                 self.end_headers()
                 return
             
+            body, compressed = self._compress_if_accepted(content, "text/html")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(content)))
+            self.send_header("Content-Length", str(len(body)))
             self.send_header("ETag", etag)
             self.send_header("Last-Modified", last_modified)
             self.send_header("Cache-Control", "no-cache")
+            if compressed:
+                self.send_header("Content-Encoding", "gzip")
             self._cors_headers()
             self.end_headers()
-            self.wfile.write(content)
+            self.wfile.write(body)
         except FileNotFoundError:
             self.send_response(404)
             self.end_headers()
             self.wfile.write(b"index.html not found in ui/ directory.")
 
     def _serve_static(self, path):
-        """Serve static files from SCRIPT_DIR or UI_DIR with caching."""
+        """Serve static files from SCRIPT_DIR or UI_DIR with caching + gzip."""
         safe_path = os.path.normpath(path.lstrip("/"))
 
         # Try SCRIPT_DIR first, then UI_DIR
@@ -745,13 +761,8 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
                 }
                 content_type = mime_types.get(ext, "application/octet-stream")
                 
-                # Use cached file reading
-                content = _read_static_file(full_path)
-                
-                # Generate ETag based on file mtime and size
-                stat = os.stat(full_path)
-                etag = f'"{stat.st_mtime_ns}-{stat.st_size}"'
-                last_modified = time.strftime("%a, %d %b %Y %H:%M:%S GMT", time.gmtime(stat.st_mtime))
+                # Use cached file reading with embedded stat info
+                content, etag, last_modified = _get_static_file(full_path)
                 
                 # Check If-None-Match / If-Modified-Since
                 if_none_match = self.headers.get("If-None-Match")
@@ -766,15 +777,18 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
                     self.end_headers()
                     return
                 
+                body, compressed = self._compress_if_accepted(content, content_type)
                 self.send_response(200)
                 self.send_header("Content-Type", content_type)
-                self.send_header("Content-Length", str(len(content)))
+                self.send_header("Content-Length", str(len(body)))
                 self.send_header("ETag", etag)
                 self.send_header("Last-Modified", last_modified)
-                self.send_header("Cache-Control", "public, max-age=31536000")  # 1 year
+                self.send_header("Cache-Control", "public, max-age=31536000")
+                if compressed:
+                    self.send_header("Content-Encoding", "gzip")
                 self._cors_headers()
                 self.end_headers()
-                self.wfile.write(content)
+                self.wfile.write(body)
                 return
 
         self.send_response(404)
@@ -1102,12 +1116,12 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({"error": str(e)}).encode())
 
 
-class ThreadedHTTPServer(http.server.HTTPServer):
-    """Handle each request in a new thread for concurrent streaming."""
+class ThreadPoolHTTPServer(http.server.HTTPServer):
+    """Handle requests via a thread pool to avoid per-request thread overhead."""
+    _pool = concurrent.futures.ThreadPoolExecutor(max_workers=8)
+
     def process_request(self, request, client_address):
-        thread = threading.Thread(target=self._handle, args=(request, client_address))
-        thread.daemon = True
-        thread.start()
+        self._pool.submit(self._handle, request, client_address)
 
     def _handle(self, request, client_address):
         try:
@@ -1187,7 +1201,7 @@ def main():
 
     server_cfg, _ = _load_server_config()
     bind_addr = server_cfg.get("bind", "0.0.0.0")
-    server = ThreadedHTTPServer((bind_addr, CHAT_SERVER_PORT), ChatHandler)
+    server = ThreadPoolHTTPServer((bind_addr, CHAT_SERVER_PORT), ChatHandler)
 
     # Open browser in background thread
     if "--no-browser" not in sys.argv:

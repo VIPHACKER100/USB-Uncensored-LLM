@@ -74,7 +74,7 @@ async function sendMsg() {
       }
     }
     finishStream(full, { model: STATE.model });
-    saveCurrentConvo();
+    (window.requestIdleCallback || setTimeout)(() => saveCurrentConvo(), 100);
     if (STATE.msgs.length === 1) {
       const title = STATE.msgs[0].content.slice(0, 40) + (STATE.msgs[0].content.length > 40 ? '…' : '');
       updateConvoTitle(STATE.activeCid, title);
@@ -128,6 +128,22 @@ document.addEventListener('click', e => {
 });
 
 // ─── File handling — paste ─────────────────────────────────────
+function _resizeImage(dataUrl, maxDim = 800) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      let w = img.width, h = img.height;
+      if (w <= maxDim && h <= maxDim) { resolve(dataUrl); return; }
+      if (w > h) { h = h * maxDim / w; w = maxDim; } else { w = w * maxDim / h; h = maxDim; }
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      resolve(c.toDataURL('image/jpeg', 0.7));
+    };
+    img.src = dataUrl;
+  });
+}
+
 document.getElementById('msg-inp').addEventListener('paste', async e => {
   const items = e.clipboardData?.items;
   if (!items) return;
@@ -137,7 +153,7 @@ document.getElementById('msg-inp').addEventListener('paste', async e => {
       const file = item.getAsFile();
       if (!file) continue;
       const reader = new FileReader();
-      reader.onload = () => attachImage(reader.result);
+      reader.onload = () => _resizeImage(reader.result).then(attachImage);
       reader.readAsDataURL(file);
       return;
     }
@@ -156,7 +172,7 @@ main.addEventListener('drop', async e => {
   for (const file of files) {
     if (file.type.startsWith('image/')) {
       const reader = new FileReader();
-      reader.onload = () => attachImage(reader.result);
+      reader.onload = () => _resizeImage(reader.result).then(attachImage);
       reader.readAsDataURL(file);
       return;
     }
@@ -192,7 +208,7 @@ document.getElementById('file-input').addEventListener('change', e => {
   if (!file) return;
   if (file.type.startsWith('image/')) {
     const reader = new FileReader();
-    reader.onload = () => attachImage(reader.result);
+    reader.onload = () => _resizeImage(reader.result).then(attachImage);
     reader.readAsDataURL(file);
   } else if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
     const reader = new FileReader();
@@ -242,9 +258,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('model-name').textContent = 'No models';
     document.querySelector('.model-btn').classList.add('no-models');
   }
-  // HW stats polling
-  pollHW();
-  setInterval(pollHW, 5000);
+  // HW stats polling (rAF-driven, only when tab visible)
+  function _hwLoop() { pollHW(); requestAnimationFrame(_hwLoop); }
+  requestAnimationFrame(_hwLoop);
   // File input value reset on click
   document.getElementById('file-input').addEventListener('click', e => { e.target.value = ''; });
 });

@@ -46,6 +46,7 @@ function toast(msg) {
 document.addEventListener('DOMContentLoaded', () => {
   initTheme();
   initSidebar();
+  initLowRAM();
 });
 function initTheme() {
   setTheme(getTheme());
@@ -64,4 +65,14 @@ function initSidebar() {
     sb.classList.add('off');
     ov.classList.remove('on');
   });
+}
+function initLowRAM() {
+  // Detect low-RAM via navigator.deviceMemory (Chrome) and add CSS hook
+  if (navigator.deviceMemory && navigator.deviceMemory < 4) {
+    document.documentElement.classList.add('low-ram');
+  }
+  // Also check performance.memory (Chrome) as a secondary signal
+  if (performance.memory && performance.memory.jsHeapSizeLimit < 1073741824) {
+    document.documentElement.classList.add('low-ram');
+  }
 }

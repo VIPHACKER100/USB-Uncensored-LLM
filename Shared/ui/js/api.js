@@ -13,11 +13,15 @@ async function apiFetch(path, opts = {}) {
 // ─── Ollama API ────────────────────────────────────────────────
 async function ollamaFetch(method, body) {
   const url = `${STATE.ollamaHost}/api/${method}`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  const isGet = method === 'tags' || !body;
+  const opts = {
+    method: isGet ? 'GET' : 'POST',
+  };
+  if (!isGet) {
+    opts.headers = { 'Content-Type': 'application/json' };
+    opts.body = JSON.stringify(body);
+  }
+  const res = await fetch(url, opts);
   if (!res.ok) {
     let errMsg = `Ollama ${res.status}`;
     try {

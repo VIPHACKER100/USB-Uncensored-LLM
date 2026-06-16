@@ -1,9 +1,14 @@
 {
-  "project_version": "2.0.0",
+  "project_version": "2.1.0",
   "ollama_version": "latest (auto-detected from GitHub releases)",
   "python_version": "3.12.x (bundled from python.org)",
   "last_updated": "2026-06-16",
   "changelog": [
+    "2.1.0 - Performance: incremental DOM streaming, deferred markdown/hljs, rAF-batched tokens",
+    "2.1.0 - Performance: static file caching (LRU), 16KB proxy buffer, Content-Length/ETag headers",
+    "2.1.0 - Performance: MEMORYSTATUSEX at module level, pre-warm CPU thread, 10s HW poll",
+    "2.1.0 - Tuning: num_ctx 2048, num_batch 256, num_thread 0 defaults",
+    "2.1.0 - CSS: will-change/contain hints, RAM detection in installer",
     "2.0.0 - Security hardening: auth token, CORS restriction, rate limiting, XSS sanitization, SHA256 verification",
     "2.0.0 - Documentation: security considerations section, updated model catalog, folder architecture",
     "2.0.0 - Architecture: centralized config files, migration script, version tracking"

@@ -1,6 +1,6 @@
 # USB-Uncensored-LLM ⚡
 
-**Version:** 2.0.0 | **Last Updated:** 2026-06-16
+**Version:** 2.1.0 | **Last Updated:** 2026-06-16
 
 **USB-Uncensored-LLM** is a fully air-gapped, zero-dependency, plug-and-play Local AI environment designed to run seamlessly from your **local hard drive** or a **portable USB/SSD**. It bypasses complex installations natively executing large language models directly on your hardware with no internet required.
 

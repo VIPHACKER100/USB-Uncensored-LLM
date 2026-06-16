@@ -40,7 +40,7 @@ function formatCodeBlocks(html) {
         code.innerHTML = hljs.highlight(code.textContent, { language: lang }).value;
       } catch { /* fallback */ }
     } else {
-      code.innerHTML = code.textContent;
+      code.textContent = code.textContent;
     }
     // wrapped with copy button
     const wrap = document.createElement('div');

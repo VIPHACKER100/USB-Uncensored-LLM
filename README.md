@@ -182,6 +182,15 @@ SHA256 checksum verification is built into all install scripts. Hashes are verif
 - When accessing over LAN, include the auth token in your client if authentication is enabled
 - For single-machine use, consider binding to `127.0.0.1` only
 
+## 📋 Changelog
+
+### 2026-06-16 — v2.0.1
+- **LLM Select UI**: Model dropdown now shows a clear "No models available" state when Ollama is unreachable or has no models loaded. Button visually indicates the error state with orange styling.
+- **401 Error Display**: Unauthorized responses from both the chat server and Ollama now show descriptive error messages with hints on how to resolve (check server console / check Ollama auth).
+- **Image Support Guard**: Images can no longer be attached or sent to models that don't support vision input. Both the attachment action and send action are blocked with a clear error message: `Cannot read "image.png" (this model does not support image input)`.
+
+---
+
 ## 🛠️ Troubleshooting
 
 - **The script instantly closes on Windows:** You likely have the legacy Windows App Execution Aliases turned on, which tricks the OS. Run the script via a command prompt, or right-click the `.bat` file and "Run as Administrator".

@@ -579,8 +579,14 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
         except Exception:
             return False
 
+    def _sanitize_header_value(self, value):
+        """Remove CR/LF to prevent HTTP response splitting via header values."""
+        if not isinstance(value, str):
+            return ""
+        return value.replace("\r", "").replace("\n", "").strip()
+
     def _cors_headers(self):
-        origin = self.headers.get("Origin", "")
+        origin = self._sanitize_header_value(self.headers.get("Origin", ""))
         if self._is_allowed_origin(origin):
             self.send_header("Access-Control-Allow-Origin", origin)
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")

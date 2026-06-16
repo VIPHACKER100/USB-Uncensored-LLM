@@ -2,6 +2,18 @@
 function buildModelMenu(models) {
   const menu = document.getElementById('model-menu');
   menu.innerHTML = '';
+  if (!models || models.length === 0) {
+    const opt = document.createElement('div');
+    opt.className = 'mm-opt';
+    opt.innerHTML = `
+      <div class="mmo-icon" style="background:transparent;color:var(--orange);font-size:16px;"><i class="fa-solid fa-triangle-exclamation"></i></div>
+      <div class="mmo-info">
+        <div class="mmo-name" style="color:var(--orange);">No models available</div>
+        <div class="mmo-desc">Start Ollama and pull a model</div>
+      </div>`;
+    menu.appendChild(opt);
+    return;
+  }
   models.forEach(name => {
     const opt = document.createElement('div');
     opt.className = `mm-opt${name === STATE.model ? ' sel' : ''}`;
@@ -21,7 +33,7 @@ function selectModel(name) {
   STATE.model = name;
   document.querySelectorAll('.mm-opt').forEach(el => el.classList.toggle('sel', el.dataset.model === name));
   document.getElementById('model-name').textContent = name;
-  document.querySelector('.model-btn').classList.remove('open');
+  document.querySelector('.model-btn').classList.remove('open', 'no-models');
   document.getElementById('model-menu').classList.remove('on');
   checkVisionWarn();
 }
@@ -38,22 +50,29 @@ document.addEventListener('click', e => {
   }
 });
 
+const VISION_MODELS = ['llava', 'bakllava', 'llama3.2-vision', 'minicpm-v'];
+
+function isVisionModel(name) {
+  return VISION_MODELS.some(v => name.toLowerCase().includes(v));
+}
+
 function checkVisionWarn() {
   const warn = document.getElementById('vision-warn');
   const hasImg = STATE.imageData !== null;
-  const visionModels = ['llava', 'bakllava', 'llama3.2-vision', 'minicpm-v'];
-  const isVision = visionModels.some(v => STATE.model.toLowerCase().includes(v));
-  warn.classList.toggle('on', hasImg && !isVision);
+  warn.classList.toggle('on', hasImg && !isVisionModel(STATE.model));
 }
 
 // ─── File attachments ──────────────────────────────────────────
 function attachImage(dataUrl) {
+  if (!isVisionModel(STATE.model)) {
+    toast('Cannot read "image.png" (this model does not support image input)');
+    return;
+  }
   STATE.imageData = dataUrl;
   STATE.pdfText = null;
   document.getElementById('img-preview').src = dataUrl;
   document.getElementById('img-preview-wrap').classList.remove('hidden');
   document.getElementById('file-bar').classList.add('on');
-  checkVisionWarn();
 }
 function attachPdf(name, text) {
   STATE.pdfText = text;

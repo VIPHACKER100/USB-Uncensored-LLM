@@ -3,7 +3,10 @@ async function apiFetch(path, opts = {}) {
   const headers = opts.headers || {};
   if (STATE.token) headers['Authorization'] = `Bearer ${STATE.token}`;
   const res = await fetch(path, { ...opts, headers });
-  if (res.status === 401) { toast('Auth required — restart server'); throw new Error('Unauthorized'); }
+  if (res.status === 401) {
+    toast('🔒 Auth required — check server console for token');
+    throw new Error('Unauthorized');
+  }
   return res;
 }
 
@@ -16,8 +19,16 @@ async function ollamaFetch(method, body) {
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const txt = await res.text().catch(() => '');
-    throw new Error(`Ollama ${res.status}: ${txt.slice(0, 200)}`);
+    let errMsg = `Ollama ${res.status}`;
+    try {
+      const errData = await res.json();
+      if (errData.error) errMsg += `: ${errData.error}`;
+    } catch {
+      const txt = await res.text().catch(() => '');
+      if (txt) errMsg += `: ${txt.slice(0, 200)}`;
+    }
+    if (res.status === 401) errMsg += ' — check Ollama authentication';
+    throw new Error(errMsg);
   }
   return res;
 }

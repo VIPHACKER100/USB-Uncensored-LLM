@@ -605,7 +605,7 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
 
         path = urlparse(self.path).path
         # Auth only enforced for /api/* routes; static assets open
-        if path.startswith("/api/"):
+        if path.startswith("/api/") and path != "/api/token":
             if not _check_auth(self.headers):
                 self.send_response(401)
                 self.send_header("Content-Type", "application/json")

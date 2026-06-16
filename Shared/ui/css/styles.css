@@ -390,6 +390,7 @@ html, body {
 .model-dd { position: relative; }
 .model-btn { display: flex; align-items: center; gap: 6px; padding: 5px 11px 5px 8px; border-radius: var(--radius-pill); border: 1px solid var(--bd); background: var(--bg3); color: var(--t2); font-family: var(--font); font-size: 12px; font-weight: 500; cursor: pointer; transition: background 0.15s, border-color 0.15s, color 0.15s; }
 .model-btn:hover { background: var(--bgh); border-color: var(--bd2); color: var(--t1); }
+.model-btn.no-models { border-color: var(--orange); color: var(--orange); }
 .model-btn svg { width: 13px; height: 13px; flex-shrink: 0; }
 .model-btn .chev { font-size: 9px; color: var(--t3); margin-left: 2px; transition: transform 0.2s; }
 .model-btn.open .chev { transform: rotate(180deg); }

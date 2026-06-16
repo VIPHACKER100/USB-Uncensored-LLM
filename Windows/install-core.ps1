@@ -104,6 +104,15 @@ Write-Host ""
 $freeGB = Get-USBFreeSpaceGB
 if ($freeGB -gt 0) {
     Write-Host "  USB Free Space: $freeGB GB" -ForegroundColor DarkGray
+
+    # Detect system RAM for model recommendations
+    $totalRAM = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB, 1)
+    Write-Host "  System RAM: $totalRAM GB" -ForegroundColor DarkGray
+    if ($totalRAM -lt 4) {
+        Write-Host "  LOW RAM: Only models ≤2GB recommended!" -ForegroundColor Red
+    } elseif ($totalRAM -lt 8) {
+        Write-Host "  MODERATE RAM: Models up to 5GB should work" -ForegroundColor Yellow
+    }
     Write-Host ""
 }
 

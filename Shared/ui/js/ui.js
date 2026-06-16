@@ -176,7 +176,11 @@ function clearSysPrompt() {
 }
 
 // ─── HW Stats ──────────────────────────────────────────────────
+let _lastHWUpdate = 0;
 async function pollHW() {
+  const now = Date.now();
+  if (now - _lastHWUpdate < 4000) return;
+  _lastHWUpdate = now;
   try {
     const res = await apiFetch('/api/stats');
     if (!res.ok) return;

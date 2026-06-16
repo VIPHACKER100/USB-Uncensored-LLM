@@ -20,6 +20,39 @@ With a unified architecture, you can initialize your AI models once and choose t
 
 ---
 
+## ⚡ Performance Optimizations (v2.1.0)
+
+USB-Uncensored-LLM now ships with significant performance improvements for low-resource environments (4–8 GB RAM, HDD/USB drives):
+
+### Streaming Rendering
+- **Incremental DOM updates** — During token generation, only the text content is updated (no full HTML rebuild per token)
+- **Deferred markdown** — `marked.parse()` + `DOMPurify.sanitize()` + `hljs.highlight()` run only once when generation finishes, not on every character
+- **rAF-batched token processing** — DOM updates are throttled via `requestAnimationFrame`, capped at 60 updates/sec
+- **Scroll throttle** — Scroll operations are queued with an rAF guard (max 1 scroll per frame)
+
+### Server-Side
+- **Static file caching** — CSS/JS/fonts cached in memory via `lru_cache` (~10x faster from USB)
+- **16KB Ollama proxy buffer** — Fewer syscalls during streaming (was 4KB)
+- **Content-Length + ETag headers** — Browser caching enabled for vendor assets; 304 responses for unchanged files
+- **Hardware stats pre-warm** — CPU baseline sampled at server start (no blocking `time.sleep(0.25)` on first poll)
+- **Polling reduced** — HW stats polled every 10s instead of 5s, with client-side debounce
+
+### Memory Tuning
+- `num_ctx: 2048` default — Reduces VRAM usage ~50% vs Ollama's default 4096–8192
+- `num_batch: 256` — Smaller batch for less memory per inference step
+- `num_thread: 0` — Auto-detect optimal thread count for host CPU
+
+### CSS
+- `will-change` hints on animated elements (avoids layout thrashing)
+- `contain: content` on message containers (isolates layout recalculations)
+
+### Installer
+- RAM detection with color-coded model size recommendations
+
+These changes make streaming feel instant on low-end machines and significantly reduce CPU usage during generation.
+
+---
+
 ## 💻 System Requirements
 Before preparing your drive, ensure you have:
 - **Storage:** A USB 3.0+ flash drive or SSD with an absolute minimum of **8 GB** free space (16 GB is **highly** recommended).

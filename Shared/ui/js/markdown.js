@@ -66,8 +66,8 @@ function formatCodeBlocks(html) {
   return div.innerHTML;
 }
 
+const _escDiv = document.createElement('div');
 function escapeHtml(s) {
-  const d = document.createElement('div');
-  d.textContent = s;
-  return d.innerHTML;
+  _escDiv.textContent = s;
+  return _escDiv.innerHTML;
 }

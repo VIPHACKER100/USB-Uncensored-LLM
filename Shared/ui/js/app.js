@@ -30,7 +30,10 @@ async function sendMsg() {
       if (m.content) msgs.push({ role: m.role, content: m.content });
     });
     msgs.push({ role: 'user', content: msgText });
-    const body = { model: STATE.model, messages: msgs, stream: true, options: { temperature: STATE.temp } };
+    const body = {
+      model: STATE.model, messages: msgs, stream: true,
+      options: { temperature: STATE.temp, num_ctx: 2048, num_batch: 256 }
+    };
     if (STATE.imageData) {
       const b64 = STATE.imageData.split(',')[1];
       body.messages[body.messages.length - 1].images = [b64];
@@ -44,6 +47,15 @@ async function sendMsg() {
     const decoder = new TextDecoder();
     let full = '';
     let buf = '';
+    let _pendingContent = '';
+    let _rafId = null;
+    function processTokenBatch() {
+      if (_pendingContent) {
+        streamMsg(_pendingContent, { model: STATE.model });
+        _pendingContent = '';
+      }
+      _rafId = null;
+    }
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -56,7 +68,8 @@ async function sendMsg() {
           const j = JSON.parse(line);
           if (j.message?.content) {
             full += j.message.content;
-            streamMsg(full, { model: STATE.model });
+            _pendingContent = full;
+            if (!_rafId) _rafId = requestAnimationFrame(processTokenBatch);
           }
           if (j.done) {
             finishStream(full, { model: STATE.model });
@@ -64,6 +77,9 @@ async function sendMsg() {
         } catch { /* skip */ }
       }
     }
+    // Flush any remaining
+    if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
+    if (_pendingContent) streamMsg(_pendingContent, { model: STATE.model });
     finishStream(full, { model: STATE.model });
     saveCurrentConvo();
     if (STATE.msgs.length === 1) {
@@ -229,7 +245,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   // HW stats polling
   pollHW();
-  setInterval(pollHW, 5000);
+  setInterval(pollHW, 10000);
   // File input value reset on click
   document.getElementById('file-input').addEventListener('click', e => { e.target.value = ''; });
 });

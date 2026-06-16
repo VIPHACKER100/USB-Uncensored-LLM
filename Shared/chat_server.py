@@ -36,9 +36,20 @@ try:
 except ImportError:
     HAS_PSUTIL = False
 
+from functools import lru_cache
+
 # ── Configuration ──────────────────────────────────────────────
 CHAT_SERVER_PORT = 3333
 OLLAMA_HOST = "http://127.0.0.1:11434"
+
+# Static file cache configuration
+STATIC_CACHE_MAX_MB = 32
+
+# Static file cache with LRU
+@lru_cache(maxsize=64)
+def _read_static_file(path):
+    with open(path, "rb") as f:
+        return f.read()
 LLAMA_CPP_MODE = "--llama-cpp" in sys.argv
 if LLAMA_CPP_MODE:
     OLLAMA_HOST = "http://127.0.0.1:8080"
@@ -91,6 +102,21 @@ ACTIVE_LOG_MODE = DEFAULT_LOG_MODE
 # ── Pure-Python Hardware Stats (no psutil needed) ──────────────
 _cpu_times_last = None  # (idle, total) from previous sample
 
+# Define MEMORYSTATUSEX struct at module level to avoid redefinition on every call
+if platform.system() == "Windows":
+    class _MEMORYSTATUSEX(ctypes.Structure):
+        _fields_ = [
+            ("dwLength",                ctypes.c_ulong),
+            ("dwMemoryLoad",            ctypes.c_ulong),
+            ("ullTotalPhys",            ctypes.c_ulonglong),
+            ("ullAvailPhys",            ctypes.c_ulonglong),
+            ("ullTotalPageFile",        ctypes.c_ulonglong),
+            ("ullAvailPageFile",        ctypes.c_ulonglong),
+            ("ullTotalVirtual",         ctypes.c_ulonglong),
+            ("ullAvailVirtual",         ctypes.c_ulonglong),
+            ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+        ]
+
 def _get_hw_stats():
     """Return (cpu_percent, ram_percent) using only stdlib / ctypes."""
     global _cpu_times_last  # must be at top of function, before any branch uses it
@@ -105,19 +131,7 @@ def _get_hw_stats():
     # ── Windows ──────────────────────────────────────────────────
     if plat == "Windows":
         # RAM via GlobalMemoryStatusEx
-        class MEMORYSTATUSEX(ctypes.Structure):
-            _fields_ = [
-                ("dwLength",                ctypes.c_ulong),
-                ("dwMemoryLoad",            ctypes.c_ulong),
-                ("ullTotalPhys",            ctypes.c_ulonglong),
-                ("ullAvailPhys",            ctypes.c_ulonglong),
-                ("ullTotalPageFile",        ctypes.c_ulonglong),
-                ("ullAvailPageFile",        ctypes.c_ulonglong),
-                ("ullTotalVirtual",         ctypes.c_ulonglong),
-                ("ullAvailVirtual",         ctypes.c_ulonglong),
-                ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
-            ]
-        msx = MEMORYSTATUSEX()
+        msx = _MEMORYSTATUSEX()
         msx.dwLength = ctypes.sizeof(msx)
         ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(msx))
         ram = float(msx.dwMemoryLoad)
@@ -683,10 +697,29 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
     # ── Serve HTML ─────────────────────────────────────────────
     def _serve_html(self):
         try:
-            with open(HTML_FILE, "rb") as f:
-                content = f.read()
+            content = _read_static_file(HTML_FILE)
+            stat = os.stat(HTML_FILE)
+            etag = f'"{stat.st_mtime_ns}-{stat.st_size}"'
+            last_modified = time.strftime("%a, %d %b %Y %H:%M:%S GMT", time.gmtime(stat.st_mtime))
+            
+            if_none_match = self.headers.get("If-None-Match")
+            if_modified_since = self.headers.get("If-Modified-Since")
+            
+            if (if_none_match and if_none_match == etag) or \
+               (if_modified_since and if_modified_since == last_modified):
+                self.send_response(304)
+                self.send_header("ETag", etag)
+                self.send_header("Last-Modified", last_modified)
+                self._cors_headers()
+                self.end_headers()
+                return
+            
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(content)))
+            self.send_header("ETag", etag)
+            self.send_header("Last-Modified", last_modified)
+            self.send_header("Cache-Control", "no-cache")
             self._cors_headers()
             self.end_headers()
             self.wfile.write(content)
@@ -696,7 +729,7 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(b"index.html not found in ui/ directory.")
 
     def _serve_static(self, path):
-        """Serve static files from SCRIPT_DIR or UI_DIR."""
+        """Serve static files from SCRIPT_DIR or UI_DIR with caching."""
         safe_path = os.path.normpath(path.lstrip("/"))
 
         # Try SCRIPT_DIR first, then UI_DIR
@@ -711,10 +744,34 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
                 ".woff2": "font/woff2", ".woff": "font/woff"
                 }
                 content_type = mime_types.get(ext, "application/octet-stream")
-                with open(full_path, "rb") as f:
-                    content = f.read()
+                
+                # Use cached file reading
+                content = _read_static_file(full_path)
+                
+                # Generate ETag based on file mtime and size
+                stat = os.stat(full_path)
+                etag = f'"{stat.st_mtime_ns}-{stat.st_size}"'
+                last_modified = time.strftime("%a, %d %b %Y %H:%M:%S GMT", time.gmtime(stat.st_mtime))
+                
+                # Check If-None-Match / If-Modified-Since
+                if_none_match = self.headers.get("If-None-Match")
+                if_modified_since = self.headers.get("If-Modified-Since")
+                
+                if (if_none_match and if_none_match == etag) or \
+                   (if_modified_since and if_modified_since == last_modified):
+                    self.send_response(304)
+                    self.send_header("ETag", etag)
+                    self.send_header("Last-Modified", last_modified)
+                    self._cors_headers()
+                    self.end_headers()
+                    return
+                
                 self.send_response(200)
                 self.send_header("Content-Type", content_type)
+                self.send_header("Content-Length", str(len(content)))
+                self.send_header("ETag", etag)
+                self.send_header("Last-Modified", last_modified)
+                self.send_header("Cache-Control", "public, max-age=31536000")  # 1 year
                 self._cors_headers()
                 self.end_headers()
                 self.wfile.write(content)
@@ -954,9 +1011,9 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
                     request_context=request_context,
                 )
 
-            # Stream the response in chunks
+            # Stream the response in chunks (16KB for fewer syscalls)
             while True:
-                chunk = response.read(4096)
+                chunk = response.read(16384)
                 if not chunk:
                     break
                 
@@ -1062,6 +1119,9 @@ class ThreadedHTTPServer(http.server.HTTPServer):
 
 HOST_HARDWARE_SPECS = _get_hardware_specs()
 LOGGER, LOG_LISTENER = configure_logging()
+
+# Pre-warm CPU baseline on server start to avoid blocking sleep on first HW stats call
+threading.Thread(target=_get_hw_stats, daemon=True).start()
 
 # Periodic rate-limit bucket cleanup thread
 def _rate_cleanup_loop():

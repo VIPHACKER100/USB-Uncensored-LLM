@@ -253,7 +253,7 @@ html, body {
 .hw-bar { display: flex; align-items: center; gap: 14px; background: var(--bg3); padding: 5px 12px; border-radius: var(--radius-pill); border: 1px solid var(--bd); }
 .hw-stat { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--t3); font-weight: 500; }
 .hw-mini-track { width: 28px; height: 3px; background: var(--bd); border-radius: 2px; overflow: hidden; }
-.hw-mini-bar { height: 100%; border-radius: 2px; transform: scaleX(0); transform-origin: left; transition: transform 0.6s ease; }
+.hw-mini-bar { height: 100%; border-radius: 2px; transform: scaleX(0); transform-origin: left; transition: transform 0.6s ease; will-change: transform; }
 .hw-mini-bar.cpu { background: var(--grad1); }
 .hw-mini-bar.ram { background: var(--grad2); }
 .hw-pct { min-width: 28px; font-size: 11px; font-weight: 600; }
@@ -283,7 +283,7 @@ html, body {
 /* ────────────────────────────────────────────────────────────────
    CHAT AREA
    ──────────────────────────────────────────────────────────────── */
-#chat { flex: 1; overflow-y: auto; scroll-behavior: smooth; display: flex; flex-direction: column; }
+#chat { flex: 1; overflow-y: auto; scroll-behavior: smooth; display: flex; flex-direction: column; will-change: scroll-position; }
 
 /* ═══════════════════════════════════════════════════════════════════════
    WELCOME SCREEN
@@ -312,9 +312,9 @@ html, body {
 /* ═══════════════════════════════════════════════════════════════════════
    MESSAGES
    ═══════════════════════════════════════════════════════════════════════ */
-#msgs { max-width: 780px; width: 100%; margin: 0 auto; padding: 24px 24px 16px; display: none; flex-direction: column; }
+#msgs { max-width: 780px; width: 100%; margin: 0 auto; padding: 24px 24px 16px; display: none; flex-direction: column; contain: layout style; }
 #msgs.on { display: flex; }
-.mr { display: flex; gap: 14px; padding: 16px 0 6px; animation: msgIn 0.25s ease; }
+.mr { display: flex; gap: 14px; padding: 16px 0 6px; animation: msgIn 0.25s ease; contain: content; will-change: opacity, transform; }
 @keyframes msgIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 .mr.usr { justify-content: flex-end; }
 .ma { width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; margin-top: 2px; }

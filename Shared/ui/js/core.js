@@ -12,7 +12,7 @@ const STATE = {
   abort: null,
   imageData: null,
   pdfText: null,
-  ollamaHost: 'http://127.0.0.1:11434',
+  ollamaHost: (window.location.protocol === 'file:') ? 'http://127.0.0.1:11434' : '/ollama',
   token: null,
 };
 

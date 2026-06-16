@@ -64,20 +64,17 @@ function streamMsg(content, opts = {}) {
   } else {
     STATE.msgs.push({ role: 'assistant', content, time: Date.now(), done: false, model: opts.model || null });
   }
-  // Incremental update: only update the text content, not full innerHTML
+  // re-render last message
+  const el = document.getElementById('msgs');
   const idx = STATE.msgs.length - 1;
   let mr = document.getElementById(`msg-${idx}`);
   if (!mr) {
     mr = document.createElement('div');
     mr.className = 'mr assistant';
     mr.id = `msg-${idx}`;
-    document.getElementById('msgs').appendChild(mr);
-    mr.innerHTML = msgHTML(STATE.msgs[idx], idx);
-  } else {
-    // Update only the .mt content area with raw text during streaming
-    const mt = mr.querySelector('.mt');
-    if (mt) mt.textContent = content;
+    el.appendChild(mr);
   }
+  mr.innerHTML = msgHTML(STATE.msgs[idx], idx);
   scrollChat();
 }
 
@@ -89,18 +86,12 @@ function finishStream(content, opts = {}) {
     last.time = Date.now();
     last.model = opts.model || last.model;
   }
-  // Full render with markdown + syntax highlighting only once at the end
   renderMsgs();
 }
 
 function scrollChat() {
   const chat = document.getElementById('chat');
-  if (scrollChat._queued) return;
-  scrollChat._queued = true;
-  requestAnimationFrame(() => {
-    chat.scrollTop = chat.scrollHeight;
-    scrollChat._queued = false;
-  });
+  requestAnimationFrame(() => { chat.scrollTop = chat.scrollHeight; });
 }
 
 function copyMsg(idx) {

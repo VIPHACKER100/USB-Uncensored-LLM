@@ -7,6 +7,15 @@ async function sendMsg() {
   const inp = document.getElementById('msg-inp');
   const text = inp.value.trim();
   if (!text && !STATE.imageData && !STATE.pdfText) return;
+  if (STATE.imageData && !isVisionModel(STATE.model)) {
+    removeAttachment();
+    if (!STATE.activeCid) newConvo();
+    document.getElementById('welcome').style.display = 'none';
+    document.getElementById('msgs').classList.add('on');
+    appendMsg('assistant', 'Cannot read "image.png" (this model does not support image input)');
+    saveCurrentConvo();
+    return;
+  }
   if (!STATE.activeCid) newConvo();
   const msgText = text || (STATE.imageData ? '[Attached image]' : '[Attached PDF]');
   const fileInfo = STATE.imageData ? { type: 'image', data: STATE.imageData } :
@@ -30,10 +39,7 @@ async function sendMsg() {
       if (m.content) msgs.push({ role: m.role, content: m.content });
     });
     msgs.push({ role: 'user', content: msgText });
-    const body = {
-      model: STATE.model, messages: msgs, stream: true,
-      options: { temperature: STATE.temp, num_ctx: 2048, num_batch: 256 }
-    };
+    const body = { model: STATE.model, messages: msgs, stream: true, options: { temperature: STATE.temp } };
     if (STATE.imageData) {
       const b64 = STATE.imageData.split(',')[1];
       body.messages[body.messages.length - 1].images = [b64];
@@ -47,15 +53,6 @@ async function sendMsg() {
     const decoder = new TextDecoder();
     let full = '';
     let buf = '';
-    let _pendingContent = '';
-    let _rafId = null;
-    function processTokenBatch() {
-      if (_pendingContent) {
-        streamMsg(_pendingContent, { model: STATE.model });
-        _pendingContent = '';
-      }
-      _rafId = null;
-    }
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -68,8 +65,7 @@ async function sendMsg() {
           const j = JSON.parse(line);
           if (j.message?.content) {
             full += j.message.content;
-            _pendingContent = full;
-            if (!_rafId) _rafId = requestAnimationFrame(processTokenBatch);
+            streamMsg(full, { model: STATE.model });
           }
           if (j.done) {
             finishStream(full, { model: STATE.model });
@@ -77,9 +73,6 @@ async function sendMsg() {
         } catch { /* skip */ }
       }
     }
-    // Flush any remaining
-    if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
-    if (_pendingContent) streamMsg(_pendingContent, { model: STATE.model });
     finishStream(full, { model: STATE.model });
     saveCurrentConvo();
     if (STATE.msgs.length === 1) {
@@ -231,21 +224,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   } catch { /* no auth or server not ready */ }
   // check Ollama availability
+  let names = [];
   try {
-    const names = await fetchModels();
-    buildModelMenu(names);
-    const defaultIdx = names.indexOf(STATE.model);
-    if (defaultIdx === -1 && names.length > 0) {
-      selectModel(names[0]);
-    } else if (defaultIdx !== -1) {
-      document.getElementById('model-name').textContent = STATE.model;
-    }
+    names = await fetchModels();
   } catch {
     toast('Ollama not reachable — start Ollama first');
   }
+  buildModelMenu(names);
+  if (names.length > 0) {
+    const defaultIdx = names.indexOf(STATE.model);
+    if (defaultIdx === -1) {
+      selectModel(names[0]);
+    } else {
+      document.getElementById('model-name').textContent = STATE.model;
+    }
+  } else {
+    document.getElementById('model-name').textContent = 'No models';
+    document.querySelector('.model-btn').classList.add('no-models');
+  }
   // HW stats polling
   pollHW();
-  setInterval(pollHW, 10000);
+  setInterval(pollHW, 5000);
   // File input value reset on click
   document.getElementById('file-input').addEventListener('click', e => { e.target.value = ''; });
 });
